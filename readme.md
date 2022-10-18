@@ -48,7 +48,7 @@ store.reactiveProp++; // В логе выведет 2
 <br>
 
 ```js
-const { value, computed, waiting, Waiting } = require('./index');
+const { value, computed, waiting, Waiting } = require('sprut-gear-chain');
 
 const [ getValue, setValue ] = value('value');
 const [ getComputed ] = computed(() => {
