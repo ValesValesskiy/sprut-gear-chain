@@ -1,0 +1,12 @@
+{
+  "name": "sprut-gear-chain",
+  "version": "0.1.0-beta.1",
+  "description": "Инструмент управления состоянием данных",
+  "keywords": ["state management", "state manager", "getter", "setter", "state", "reactive"],
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "vv",
+  "license": "ISC"
+}
