@@ -66,7 +66,7 @@ const [ getComputed ] = computed(() => {
 });
 
 const [ exec, dissociate ] = callback(() => {
-    if (someIsWaiting(getComputed())) {
+    if (!someIsWaiting(getComputed())) {
         console.log(getComputed());
     } else {
         console.log('waiting');
