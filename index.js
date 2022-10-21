@@ -10,6 +10,14 @@ const ImmediateValue = Symbol('immediateValue');
 const DeferredValue = Symbol('deferredValue');
 const AutoConfig = Symbol('autoConfig');
 const Waiting = Symbol('waiting');
+const CancelAction = Symbol('cancelAction');
+const WaitingCanceled = Symbol('waitingCanceled');
+const WaitingPoint = Symbol('waitingPoint');
+const Fields = {
+    computed: Symbol('computed'),
+    reactive: Symbol('reactive'),
+    method: Symbol('method')
+}
 let timeoutFunction = setTimeout;
 
 class HiddenStore {
@@ -32,14 +40,24 @@ function init(cls) {
             initedStart: {},
             configSymbols: [],
             configuredFields: [],
-            isFactory: {}
+            isFactory: {},
+            fieldTypes: {}
         };
     }
 }
 
 function data(object) {
     if (!object[StoreData]) {
-        object[StoreData] = { subscribers: {}, cache: {}, values: {}, localChangeCallbacks: {}, isHandledChange: {}, dependencies: {}, initedReactive: {} };
+        object[StoreData] = {
+            subscribers: {},
+            cache: {},
+            values: {},
+            localChangeCallbacks: {},
+            isHandledChange: {},
+            dependencies: {},
+            initedReactive: {},
+            waitingResults: {}
+        };
     }
 
     return object[StoreData];
@@ -56,7 +74,7 @@ function initReactive(object, field) {
         const defaultValue = dflt(object.__proto__.constructor).values[field];
 
         if (dflt(object.__proto__.constructor).isFactory[field] && defaultValue instanceof Function) {
-            storeData.values[field] = defaultValue.apply(this);
+            storeData.values[field] = defaultValue.apply(object);
         } else {
             storeData.values[field] = defaultValue;
         }
@@ -76,7 +94,7 @@ function isDeferredly(value) {
 function _reactive(cls, field, def, onSet, updateImmediately, isFactory) {
 	dflt(cls).values[field] = def;
 
-    addconfiguredField(cls, field);
+    addconfiguredField(cls, field, Fields.reactive);
 
     if (updateImmediately !== true && updateImmediately !== false) {
         dflt(cls).updateImmediately[field] = dflt(cls).config.updateImmediately;
@@ -92,9 +110,9 @@ function _reactive(cls, field, def, onSet, updateImmediately, isFactory) {
 		get() {
             const storeData = data(this);
 
-            initReactive(this, field);
+            initReactive(this, field)
 
-			if (!storeData.subscribers[field]) storeData.subscribers[field] = [];
+            if (!storeData.subscribers[field]) storeData.subscribers[field] = [];
 
 			const stacked = getStack[getStack.length - 1];
 
@@ -110,7 +128,16 @@ function _reactive(cls, field, def, onSet, updateImmediately, isFactory) {
 
             let value = storeData.values[field];
 
-			if (value instanceof Object && !value.__proto__.constructor.isStorable) {
+            if (value !== null && value !== undefined) {
+                if (value[Waiting]) {
+                    storeData.waitingResults[field] = value;
+                    value[WaitingPoint] = { object: this, field };
+                    storeData.values[field] = Waiting;
+                    value = Waiting;
+                }
+            }
+
+			if (value !== Waiting && value instanceof Object && !value.__proto__.constructor.isStorable) {
 				return innerWathcer(this, value, field);
 			}
 
@@ -118,10 +145,16 @@ function _reactive(cls, field, def, onSet, updateImmediately, isFactory) {
 		},
 		set(v) {
             const storeData = data(this);
+            let isPut = false;
 
-            initReactive(this, field);
+            initReactive(this, field)
 
-			if(v && v.hush) {
+            if (v.isPut) {
+                isPut = true;
+                v = v.value;
+            }
+
+            if(v && v.hush) {
 				storeData.values[field] = v.value;
 			} else {
 				const prev = storeData.values[field];
@@ -135,10 +168,20 @@ function _reactive(cls, field, def, onSet, updateImmediately, isFactory) {
 					newV = setRes !== undefined ? setRes : newV;
 				}
 				if (newV !== prev) {
+                    if (!isPut) {
+                        if (storeData.waitingResults[field]) {
+                            storeData.waitingResults[field][WaitingCanceled] = true;
+                        }
+                        if (storeData.waitingResults[field] && storeData.waitingResults[field][CancelAction]) {
+                            storeData.waitingResults[field][CancelAction]();
+                        }
+                        delete storeData.waitingResults[field];
+                    }
+
                     if (!isDeferred && (isImmediate || dflt(cls).updateImmediately[field])) {
 					    storeData.values[field] = newV;
 
-					    this.change(field);
+					    change(this, field);
                         execSyncTasks();
                     } else {
                         setTask(this, field, newV);
@@ -169,7 +212,7 @@ function innerWathcer(that, object, field) {
 
                 if (!isDeferred && (isImmediate || dflt(that.__proto__.constructor).updateImmediately[field])) {
 				    target[prop] = value;
-				    that.change(field);
+				    change(that, field);
                     execSyncTasks();
                 } else {
                     setTask(that, field, data(that).values[field], () => target[prop] = value);
@@ -181,7 +224,7 @@ function innerWathcer(that, object, field) {
 	});
 }
 
-const arrayMutationMethods =  [ 'push', 'pop', 'shift', 'unshift', 'splice'];
+const arrayMutationMethods =  [ 'push', 'pop', 'shift', 'unshift', 'splice' ];
 
 function isArrayMutationMethod(field) {
     return arrayMutationMethods.indexOf(field) !== -1;
@@ -191,7 +234,7 @@ function arrayMutationMethod(method, that, object, field) {
     return function(...args) {
         if (dflt(that.__proto__.constructor).updateImmediately[field]) {
             Array.prototype[method].apply(this, args);
-            that.change(field);
+            change(that, field);
             execSyncTasks();
         } else {
             setTask(that, field, data(that).values[field], () => Array.prototype[method].apply(this, args));
@@ -202,7 +245,7 @@ function arrayMutationMethod(method, that, object, field) {
 };
 
 function _computed(cls, field, getter, setter) {
-    addconfiguredField(cls, field);
+    addconfiguredField(cls, field, Fields.computed);
 
 	Object.defineProperty(cls.prototype, field, {
 		get() {
@@ -231,11 +274,25 @@ function _computed(cls, field, getter, setter) {
 
 			const result = getter.apply(this);
 
-			storeData.cache[field] = result;
+			storeData.cache[field] = result[Waiting] ? Waiting : result;
+
+            if (storeData.waitingResults[field]) {
+                storeData.waitingResults[field][WaitingCanceled] = true;
+            }
+            if (storeData.waitingResults[field] && storeData.waitingResults[field][CancelAction]) {
+                storeData.waitingResults[field][CancelAction]();
+            }
+            if (result !== null && result !== undefined) {
+                if (result[Waiting]) {
+                    storeData.waitingResults[field] = result;
+                } else {
+                    delete storeData.waitingResults[field];                
+                }
+            }
 
 			unwatch();
 
-			return result;
+			return result[Waiting] ? Waiting : result;
 		},
         set(v) {
             if (setter) {
@@ -249,7 +306,7 @@ function _computed(cls, field, getter, setter) {
 function _method(cls, field, methodConfig) {
     const classData = dflt(cls);
 
-    addconfiguredField(cls, field);
+    addconfiguredField(cls, field, Fields.method);
 
 	if (methodConfig.callback || methodConfig.autoExec) {
 		const method = methodConfig.method || cls.prototype[field];
@@ -394,47 +451,57 @@ function storable(object, config = {}) {
 			}
 		});
 
-		Object.defineProperty(object.prototype, 'change', {
+        Object.defineProperty(object.prototype, 'dissociate', {
 			value(field) {
-                const storeData = data(this);
-
-                if (!storeData.isHandledChange[field]) {
-                    storeData.isHandledChange[field] = true;
-
-                    let subs;
-
-                    if (storeData.subscribers[field]) {
-                        subs = storeData.subscribers[field];
-                        storeData.subscribers[field] = [];
-                    }
-
-                    if (storeData.cache[field]) {
-                        delete storeData.cache[field];
-                    }
-
-                    setSyncTask(() => {
-                        const changeCallbacks = dflt(object).changeCallbacks;
-
-                        if (changeCallbacks[field]) {
-                            changeCallbacks[field].forEach(cb => cb.apply(this));
-                        }
-
-                        if (storeData.localChangeCallbacks[field]) {
-                            storeData.localChangeCallbacks[field].forEach(cb => cb.apply(this));
-                        }
-                    }, 0);
-
-                    setSyncTask(() => {
-                        storeData.isHandledChange[field] = false;
-                    }, 1);
-
-                    if (subs) {
-                        subs.forEach(s => s.object.change(s.field));
+                if (field !== undefined) {
+                    clearDependencies(this, field);
+                } else {
+                    for(let field in dflt(object).fieldTypes) {
+                        this.dissociate(field);
                     }
                 }
 			}
 		});
 	}
+}
+
+function change(object, field) {
+    const storeData = data(object);
+
+    if (!storeData.isHandledChange[field]) {
+        storeData.isHandledChange[field] = true;
+
+        let subs;
+
+        if (storeData.subscribers[field]) {
+            subs = storeData.subscribers[field];
+            storeData.subscribers[field] = [];
+        }
+
+        if (storeData.cache[field]) {
+            delete storeData.cache[field];
+        }
+
+        setSyncTask(() => {
+            const changeCallbacks = dflt(object.__proto__.constructor).changeCallbacks;
+
+            if (changeCallbacks[field]) {
+                changeCallbacks[field].forEach(cb => cb.apply(object));
+            }
+
+            if (storeData.localChangeCallbacks[field]) {
+                storeData.localChangeCallbacks[field].forEach(cb => cb.apply(object));
+            }
+        }, 0);
+
+        setSyncTask(() => {
+            storeData.isHandledChange[field] = false;
+        }, 1);
+
+        if (subs) {
+            subs.forEach(s => change(s.object, s.field));
+        }
+    }
 }
 
 function watch(object, watcherName) {
@@ -447,6 +514,10 @@ function unwatch() {
 
 function initStore(object) {
     const classData = dflt(object.__proto__.constructor);
+
+    for(let field of classData.configuredFields) {
+        delete object[field];
+    }
 
     for(let field in classData.dependenciesTest) {
         watch(object, field);
@@ -469,7 +540,11 @@ function configure(object, config = object.storeConfig) {
             const computedAndMethods = Object.getOwnPropertyDescriptors(object.__proto__);
 
             for(let prop in props) {
-                config.reactive[prop] = { defult: props[prop].value };
+                if (props[prop].value instanceof Object || props[prop].value === Waiting) {
+                    config.reactive[prop] = { default() { return this[prop] }, isFactory: true };
+                } else {
+                    config.reactive[prop] = { default: props[prop].value };
+                }
             }
             for(let prop in computedAndMethods) {
                 if (computedAndMethods[prop].value && computedAndMethods[prop].value instanceof Function) {
@@ -550,28 +625,27 @@ function configure(object, config = object.storeConfig) {
         }
 
         object.__proto__.constructor.configure(cfg);
-    } else {
-        for(let field of classData.configuredFields) {
-            delete object[field];
-        }
     }
 
     initStore(object);
 }
 
-function addconfiguredField(cls, field) {
+function addconfiguredField(cls, field, type) {
     if (dflt(cls).configuredFields.indexOf(field) === -1) {
         dflt(cls).configuredFields.push(field);
     }
+
+    dflt(cls).fieldTypes[field] = type;
 }
 
-function callback(callback, dependencies) {
-	const field = callbackCount++;
+function callback(callback, dependencies, proxyCallback) {
+	const field = (callbackCount++).toString();
 
 	HiddenStore.configure({
 		methods: {
 			[field]: {
 				method: callback,
+                callback: proxyCallback,
 				autoExec: true,
                 dependencies
 			}
@@ -586,7 +660,13 @@ function callback(callback, dependencies) {
     	hiddenStore[field]();
     }
 
-	return () => {HiddenStore.offChange(field, hiddenStore[field])};
+	return [
+        (...args) => hiddenStore[field](...args),
+        () => {
+            HiddenStore.offChange(field, hiddenStore[field]);
+            clearDependencies(hiddenStore, field);
+        }
+    ];
 }
 
 function asyncWatcher(fn) {
@@ -607,22 +687,56 @@ function asyncWatcher(fn) {
 	}
 }
 
-function waiting() {
+function waiting(actionFunction) {
     const stacked = getStack[getStack.length - 1];
 
-    if (!stacked) {
-        throw new Error('No getter in progress');
-    }
+    let cancelAction;
 
-    const result = (value) => {
-        data(stacked.object).cache[stacked.field] = value;
-        data(stacked.object).subscribers[stacked.field].forEach(sub => {
-            sub.object.change(sub.field);
-        });
-        execSyncTasks();
+    const put = (value) => {
+        if (!resultObject[WaitingCanceled]) {
+            if (stacked) {
+                data(stacked.object).cache[stacked.field] = value;
+                data(stacked.object).subscribers[stacked.field].forEach(sub => {
+                    change(sub.object, sub.field);
+                }); 
+                execSyncTasks();
+            } else if (resultObject[WaitingPoint]) {
+                point = resultObject[WaitingPoint];
+                resultObject[WaitingPoint].object[resultObject[WaitingPoint].field] = { isPut: true, value };
+            }
+        }
     };
 
-    return result;
+    if (actionFunction instanceof Function) {
+        cancelAction = actionFunction.apply(stacked ? stacked.object : undefined, [put]);
+    }
+
+    const resultObject = { [Waiting]: true, [CancelAction]: cancelAction instanceof Function ? cancelAction : undefined };
+
+    put[Waiting] = true;
+    resultObject.put = put;
+
+    return resultObject;
+}
+
+function someIsWaiting(...args) {
+    for(let arg of args) {
+        if (arg === Waiting) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function allIsWaiting(...args) {
+    for(let arg of args) {
+        if (arg !== Waiting) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 function immediate(value) {
@@ -645,6 +759,39 @@ function useDevHelper(devHelper) {
     DevHelper = devHelper;
 
     throw 'Blank function useDevHelper';
+}
+
+function clearDependencies(object, field) {
+    if (dflt(object.__proto__.constructor).fieldTypes[field]) {
+        const storeData = data(object);
+
+        if (storeData.subscribers[field]) {
+            storeData.subscribers[field].forEach(sub => {
+                const subObject = sub.object;
+                const prop = sub.field;
+                const subData = data(subObject);
+                const index = subData.dependencies[prop].findIndex(dep => dep.field === field && dep.object === object);
+
+                if (index !== -1) {
+                    subData.dependencies[prop].splice(index, 1);
+                }
+            });
+            storeData.subscribers[field] = [];
+        }
+        if (storeData.dependencies[field]) {
+            storeData.dependencies[field].forEach(dep => {
+                const depObject = dep.object;
+                const prop = dep.field;
+                const depData = data(depObject);
+                const index = depData.subscribers[prop].findIndex(sub => sub.field === field && sub.object === object);
+
+                if (index !== -1) {
+                    depData.subscribers[prop].splice(index, 1);
+                }
+            });
+            storeData.dependencies[field] = [];
+        }
+    }
 }
 
 function setTask(object, field, value, preSetter) {
@@ -686,7 +833,7 @@ function execTask() {
         storeData.values[field] = value;
     });
     tasks.forEach(({ object, field }) => {
-        object.change(field);
+        change(object, field);
     });
     execSyncTasks();
 }
@@ -724,7 +871,7 @@ function useTimeoutFunction(fn) {
 // Functions
 
 function value(value) {
-    const field = callbackCount++;
+    const field = (callbackCount++).toString();
 
     HiddenStore.configure({
 		reactive: {
@@ -734,11 +881,11 @@ function value(value) {
 		}
 	});
 
-    return [ () => hiddenStore[field], (value) => hiddenStore[field] = value ];
+    return [ () => hiddenStore[field], (value) => hiddenStore[field] = value, () => hiddenStore.dissociate(field) ];
 }
 
 function computed(getter, setter) {
-    const field = callbackCount++;
+    const field = (callbackCount++).toString();
 
     HiddenStore.configure({
 		computed: {
@@ -748,7 +895,23 @@ function computed(getter, setter) {
 		}
 	});
 
-    return [ () => hiddenStore[field], (value) => hiddenStore[field] = value ];
+    return [ () => hiddenStore[field], (value) => hiddenStore[field] = value, () => hiddenStore.dissociate(field) ];
 }
 
-module.exports = { storable,  asyncWatcher, callback, useDevHelper, init: initStore, configure, immediate, deferred, data, useTimeoutFunction, value, computed, waiting, Waiting };
+module.exports = {
+    storable,
+    asyncWatcher,
+    callback,
+    useDevHelper,
+    init: initStore,
+    configure,
+    immediate,
+    deferred,
+    useTimeoutFunction,
+    value,
+    computed,
+    waiting,
+    someIsWaiting,
+    allIsWaiting,
+    Waiting
+};

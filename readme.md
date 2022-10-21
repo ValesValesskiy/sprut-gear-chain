@@ -8,6 +8,10 @@
 
 <span style="color: #cc5555">Инструмент тестируется и будет дописываться или переписываться.</span>
 
+<span style="color: #cc5555">До версии 1.0.0 интерфейсы некоторых методов могут отличаться от релиза к релизу.</span>
+
+<span style="color: #cc5555">Прошу понять и простить.</span>
+
 Инструмент управления состоянием данных.
 Упрощает слежение за изменениями данных и создание реакции на изменения. По результату и использованию похоже на mobX. Конфигурация происходит на уровне прототипа с минимальными действиями во время работы с данными. По крайней мере такой была попытка. Писалось в целях обучения, эксперимента, для нужд собственных разработок и из принципа.
 Типизацию пока не доробатывал.
@@ -48,20 +52,21 @@ store.reactiveProp++; // В логе выведет 2
 <br>
 
 ```js
-const { value, computed, waiting, Waiting } = require('sprut-gear-chain');
+const { value, computed, waiting, someIsWaiting } = require('sprut-gear-chain');
 
 const [ getValue, setValue ] = value('value');
 const [ getComputed ] = computed(() => {
     const result = getValue() + ' is reactive';
-    const put = waiting();
 
-    setTimeout(() => put(result), 1000);
+    return waiting((put) => {
+        const timeout = setTimeout(() => put(result), 1000);
 
-    return Waiting;
+        return () => clearTimeout(timeout);
+    });
 });
 
-const offListener = callback(() => {
-    if (getComputed() !== Waiting) {
+const [ exec, dissociate ] = callback(() => {
+    if (someIsWaiting(getComputed())) {
         console.log(getComputed());
     } else {
         console.log('waiting');
@@ -77,6 +82,12 @@ setTimeout(() => {
 // waiting
 // new value is reactive
 ```
+
+```put``` удастся использовать до следующего изменения, после чего он отключится. Также будет вызвана функция, если таковая возвращалась из функции, вброшенной в ```waiting()```. Можно использовать для отключения ожидающих реакций. ```put``` до момента отключения можно использовать множество раз. При изменении будет создан новый и старые и новые не будут пересекаться и перебивать друг друга.
+
+<br>
+
+Также ```waiting()``` можно использовать как инициализирующее значение для ```reactive``` полей класса(обычных значений) и в фукнции ```value()``` при создании значения.
 
 <br>
 
@@ -124,7 +135,7 @@ class Store {
 const store = new Store();
 
 store.reactiveProp++;
-store.immediateProp = 'value'
+store.immediateProp = 'value';
 // Лог:
 // immediateProp = value, reactiveProp = 1
 // immediateProp = value, reactiveProp = 2
