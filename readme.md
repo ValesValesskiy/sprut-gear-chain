@@ -1,10 +1,8 @@
-<center>
 <br>
 <br>
 <p align="center"><img src="./icon.svg" width="150"></p>
 <br>
 <br>
-</center>
 
 ```
 > npm i sprut-gear-chain
