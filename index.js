@@ -6,6 +6,8 @@ let DevHelper;
 
 const StoreData = Symbol('storeData');
 const Default = Symbol('default');
+const Hush = Symbol('hush');
+const Value = Symbol('value');
 const ImmediateValue = Symbol('immediateValue');
 const DeferredValue = Symbol('deferredValue');
 const AutoConfig = Symbol('autoConfig');
@@ -83,14 +85,6 @@ function initReactive(object, field) {
     }
 }
 
-function isImmediately(value) {
-    return (value instanceof Object && ImmediateValue in value);
-}
-
-function isDeferredly(value) {
-    return (value instanceof Object && DeferredValue in value);
-}
-
 function _reactive(cls, field, def, onSet, updateImmediately, isFactory) {
 	dflt(cls).values[field] = def;
 
@@ -154,13 +148,13 @@ function _reactive(cls, field, def, onSet, updateImmediately, isFactory) {
                 v = v.value;
             }
 
-            if(v && v.hush) {
-				storeData.values[field] = v.value;
+            if(v && v[Hush]) {
+				storeData.values[field] = v[Value];
 			} else {
 				const prev = storeData.values[field];
                 const isImmediate = isImmediately(v);
                 const isDeferred = isDeferredly(v);
-				let newV = isImmediate ? v[ImmediateValue] : (isDeferred ? v[DeferredValue] : v);
+				let newV = isImmediate || isDeferred ? v[Value] : v;
 
 				if(onSet instanceof Function) {
 					let setRes = onSet.apply(this, [prev, newV]);
@@ -208,7 +202,7 @@ function innerWathcer(that, object, field) {
 			if (target[prop] !== val) {
                 const isImmediate = isImmediately(val);
                 const isDeferred = isDeferredly(val);
-                const value = isImmediate ? val[ImmediateValue] : (isDeferred ? val[DeferredValue] : val);
+                const value = isImmediate || isDeferred ? val[Value] : val;
 
                 if (!isDeferred && (isImmediate || dflt(that.__proto__.constructor).updateImmediately[field])) {
 				    target[prop] = value;
@@ -222,12 +216,6 @@ function innerWathcer(that, object, field) {
 			return true;
 		}
 	});
-}
-
-const arrayMutationMethods =  [ 'push', 'pop', 'shift', 'unshift', 'splice' ];
-
-function isArrayMutationMethod(field) {
-    return arrayMutationMethods.indexOf(field) !== -1;
 }
 
 function arrayMutationMethod(method, that, object, field) {
@@ -630,6 +618,50 @@ function configure(object, config = object.storeConfig) {
     initStore(object);
 }
 
+function clearDependencies(object, field) {
+    if (dflt(object.__proto__.constructor).fieldTypes[field]) {
+        const storeData = data(object);
+
+        if (storeData.subscribers[field]) {
+            storeData.subscribers[field].forEach(sub => {
+                const subObject = sub.object;
+                const prop = sub.field;
+                const subData = data(subObject);
+                const index = subData.dependencies[prop].findIndex(dep => dep.field === field && dep.object === object);
+
+                if (index !== -1) {
+                    subData.dependencies[prop].splice(index, 1);
+                }
+            });
+            storeData.subscribers[field] = [];
+        }
+        if (storeData.dependencies[field]) {
+            storeData.dependencies[field].forEach(dep => {
+                const depObject = dep.object;
+                const prop = dep.field;
+                const depData = data(depObject);
+                const index = depData.subscribers[prop].findIndex(sub => sub.field === field && sub.object === object);
+
+                if (index !== -1) {
+                    depData.subscribers[prop].splice(index, 1);
+                }
+            });
+            storeData.dependencies[field] = [];
+        }
+    }
+}
+
+
+// Helpers
+
+function isImmediately(value) {
+    return (value instanceof Object && value[ImmediateValue]);
+}
+
+function isDeferredly(value) {
+    return (value instanceof Object && value[DeferredValue]);
+}
+
 function addconfiguredField(cls, field, type) {
     if (dflt(cls).configuredFields.indexOf(field) === -1) {
         dflt(cls).configuredFields.push(field);
@@ -638,7 +670,45 @@ function addconfiguredField(cls, field, type) {
     dflt(cls).fieldTypes[field] = type;
 }
 
-function callback(callback, dependencies, proxyCallback) {
+const arrayMutationMethods =  [ 'push', 'pop', 'shift', 'unshift', 'splice' ];
+
+function isArrayMutationMethod(field) {
+    return arrayMutationMethods.indexOf(field) !== -1;
+}
+
+// /Helpers
+
+// Classless methods
+
+function value(value) {
+    const field = (callbackCount++).toString();
+
+    HiddenStore.configure({
+		reactive: {
+			[field]: {
+				default: value
+			}
+		}
+	});
+
+    return [ () => hiddenStore[field], (value) => hiddenStore[field] = value, () => hiddenStore.dissociate(field) ];
+}
+
+function computed(getter, setter) {
+    const field = (callbackCount++).toString();
+
+    HiddenStore.configure({
+		computed: {
+			[field]: {
+				getter, setter
+			}
+		}
+	});
+
+    return [ () => hiddenStore[field], (value) => hiddenStore[field] = value, () => hiddenStore.dissociate(field) ];
+}
+
+function callback(callback, dependencies, proxyCallback, config = {}) {
 	const field = (callbackCount++).toString();
 
 	HiddenStore.configure({
@@ -656,18 +726,24 @@ function callback(callback, dependencies, proxyCallback) {
         watch(hiddenStore, field);
         dependencies();
         unwatch();
-    } else {
+    } else if (config.initedStart) {
     	hiddenStore[field]();
     }
 
 	return [
-        (...args) => hiddenStore[field](...args),
+        function(...args) {
+            return hiddenStore[field].apply(this, args);
+        },
         () => {
             HiddenStore.offChange(field, hiddenStore[field]);
             clearDependencies(hiddenStore, field);
         }
     ];
 }
+
+// /Classless methods
+
+// Async methods
 
 function asyncWatcher(fn) {
 	const currentDependency = getStack[getStack.length - 1];
@@ -719,6 +795,10 @@ function waiting(actionFunction) {
     return resultObject;
 }
 
+// /Async methods
+
+// Waiting check
+
 function someIsWaiting(...args) {
     for(let arg of args) {
         if (arg === Waiting) {
@@ -739,60 +819,25 @@ function allIsWaiting(...args) {
     return true;
 }
 
+// /Waiting check
+
+// Value modificators
+
+function hush(value) {
+    return { [Hush]: true , [Value]: value };
+}
+
 function immediate(value) {
-    return { [ImmediateValue]: value };
+    return { [ImmediateValue]: true, [Value]: value };
 }
 
 function deferred(value) {
-    return { [DeferredValue]: value };
+    return { [DeferredValue]: true, [Value]: value };
 }
 
-function Throw(error) {
-    if (DevHelper) {
-        DevHelper.error(error);
-    }
-    
-    throw error;
-}
+// /Value modificators
 
-function useDevHelper(devHelper) {
-    DevHelper = devHelper;
-
-    throw 'Blank function useDevHelper';
-}
-
-function clearDependencies(object, field) {
-    if (dflt(object.__proto__.constructor).fieldTypes[field]) {
-        const storeData = data(object);
-
-        if (storeData.subscribers[field]) {
-            storeData.subscribers[field].forEach(sub => {
-                const subObject = sub.object;
-                const prop = sub.field;
-                const subData = data(subObject);
-                const index = subData.dependencies[prop].findIndex(dep => dep.field === field && dep.object === object);
-
-                if (index !== -1) {
-                    subData.dependencies[prop].splice(index, 1);
-                }
-            });
-            storeData.subscribers[field] = [];
-        }
-        if (storeData.dependencies[field]) {
-            storeData.dependencies[field].forEach(dep => {
-                const depObject = dep.object;
-                const prop = dep.field;
-                const depData = data(depObject);
-                const index = depData.subscribers[prop].findIndex(sub => sub.field === field && sub.object === object);
-
-                if (index !== -1) {
-                    depData.subscribers[prop].splice(index, 1);
-                }
-            });
-            storeData.dependencies[field] = [];
-        }
-    }
-}
+// Task management
 
 function setTask(object, field, value, preSetter) {
     const similarTask = setTasks.find(task => task.object === object && task.field === field);
@@ -858,6 +903,10 @@ function execSyncTasks() {
     });
 }
 
+// /Task management
+
+// Behavior methods
+
 function useTimeoutFunction(fn) {
     if (fn instanceof Function) {
         timeoutFunction = fn;
@@ -868,45 +917,36 @@ function useTimeoutFunction(fn) {
     }
 }
 
-// Functions
+// /Behavior methods
 
-function value(value) {
-    const field = (callbackCount++).toString();
+// Dev helpers
 
-    HiddenStore.configure({
-		reactive: {
-			[field]: {
-				default: value
-			}
-		}
-	});
-
-    return [ () => hiddenStore[field], (value) => hiddenStore[field] = value, () => hiddenStore.dissociate(field) ];
+function Throw(error) {
+    if (DevHelper) {
+        DevHelper.error(error);
+    }
+    
+    throw error;
 }
 
-function computed(getter, setter) {
-    const field = (callbackCount++).toString();
+function useDevHelper(devHelper) {
+    DevHelper = devHelper;
 
-    HiddenStore.configure({
-		computed: {
-			[field]: {
-				getter, setter
-			}
-		}
-	});
-
-    return [ () => hiddenStore[field], (value) => hiddenStore[field] = value, () => hiddenStore.dissociate(field) ];
+    throw 'Blank function useDevHelper';
 }
+
+// Dev helpers
 
 module.exports = {
     storable,
+    init: initStore,
     asyncWatcher,
     callback,
     useDevHelper,
-    init: initStore,
     configure,
     immediate,
     deferred,
+    hush,
     useTimeoutFunction,
     value,
     computed,

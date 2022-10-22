@@ -1,6 +1,6 @@
 {
   "name": "sprut-gear-chain",
-  "version": "0.2.0-beta.2",
+  "version": "0.3.0-beta.1",
   "description": "Инструмент управления состоянием данных",
   "keywords": ["state management", "state manager", "getter", "setter", "state", "reactive"],
   "repository": {
