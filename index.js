@@ -15,6 +15,8 @@ const Waiting = Symbol('waiting');
 const CancelAction = Symbol('cancelAction');
 const WaitingCanceled = Symbol('waitingCanceled');
 const WaitingPoint = Symbol('waitingPoint');
+const HiddenStoreField = Symbol('hiddenStoreField');
+const NoValue = Symbol('noValue');
 const Fields = {
     computed: Symbol('computed'),
     reactive: Symbol('reactive'),
@@ -106,19 +108,7 @@ function _reactive(cls, field, def, onSet, updateImmediately, isFactory) {
 
             initReactive(this, field)
 
-            if (!storeData.subscribers[field]) storeData.subscribers[field] = [];
-
-			const stacked = getStack[getStack.length - 1];
-
-            if (stacked) {
-                const stackedData = data(stacked.object);
-            
-                if (!stackedData.dependencies[stacked.field]) stackedData.dependencies[stacked.field] = [];
-                if (!storeData.subscribers[field].find(s => s.field === stacked.field && s.object === stacked.object)) {
-                    storeData.subscribers[field].push(getStack[getStack.length - 1]);
-                    stackedData.dependencies[stacked.field].push({ object: this, field });
-                }
-            }
+            resolveDependencies(this, field, true);
 
             let value = storeData.values[field];
 
@@ -187,13 +177,21 @@ function _reactive(cls, field, def, onSet, updateImmediately, isFactory) {
 	})
 }
 
-function innerWathcer(that, object, field) {
+function innerWathcer(that, object, field, innerProp = field) {
 	return new Proxy(object, {
 		get(target, prop) {
+            if (!(target instanceof Object) || typeof prop === 'symbol') {
+                return target[prop];
+            }
+            if (prop === HiddenStoreField) {
+                return field;
+            }
+
+            resolveDependencies(that, `${innerProp}.${prop}`);
             if (isArrayMutationMethod(prop)) {
-                return arrayMutationMethod(prop, that, object, field);
+                return arrayMutationMethod(prop, that, object, field, `${innerProp}.${prop}`);
             } else if (prop in target && target[prop] instanceof Object && Object.hasOwnProperty(target, prop)) {
-				return innerWathcer(that, target[prop], field);
+				return innerWathcer(that, target[prop], field), `${innerProp}.${prop}`;
 			}
 
 			return target[prop];
@@ -209,7 +207,7 @@ function innerWathcer(that, object, field) {
 				    change(that, field);
                     execSyncTasks();
                 } else {
-                    setTask(that, field, data(that).values[field], () => target[prop] = value);
+                    setTask(that, `${innerProp}.${prop}`/*field*/, NoValue/*data(that).values[field]*/, () => target[prop] = value);
                 }
 			}
 
@@ -218,19 +216,38 @@ function innerWathcer(that, object, field) {
 	});
 }
 
-function arrayMutationMethod(method, that, object, field) {
+function arrayMutationMethod(method, that, object, field, prop) {
     return function(...args) {
         if (dflt(that.__proto__.constructor).updateImmediately[field]) {
             Array.prototype[method].apply(this, args);
-            change(that, field);
+            change(that, prop);
             execSyncTasks();
         } else {
-            setTask(that, field, data(that).values[field], () => Array.prototype[method].apply(this, args));
+            setTask(that, prop, NoValue, () => Array.prototype[method].apply(this, args));
         }
 
         return Array.prototype[method].apply([...this], args);
     }
 };
+
+function resolveDependencies(object, field, isReactive) {
+    const storeData = data(object);
+
+    if (!storeData.subscribers[field]) storeData.subscribers[field] = [];
+    if (!isReactive && !storeData.dependencies[field]) storeData.dependencies[field] = [];
+
+	const stacked = getStack[getStack.length - 1];
+
+    if (stacked) {
+        const stackedData = data(stacked.object);
+
+        if (!stackedData.dependencies[stacked.field]) stackedData.dependencies[stacked.field] = [];
+        if (!storeData.subscribers[field].find(s => s.field === stacked.field && s.object === stacked.object)) {
+            storeData.subscribers[field].push(getStack[getStack.length - 1]);
+            stackedData.dependencies[stacked.field].push({ object, field });
+        }
+    }
+}
 
 function _computed(cls, field, getter, setter) {
     addconfiguredField(cls, field, Fields.computed);
@@ -239,20 +256,7 @@ function _computed(cls, field, getter, setter) {
 		get() {
             const storeData = data(this);
 
-			if (!storeData.subscribers[field]) storeData.subscribers[field] = [];
-            if (!storeData.dependencies[field]) storeData.dependencies[field] = [];
-
-			const stacked = getStack[getStack.length - 1];
-
-            if (stacked) {
-                const stackedData = data(stacked.object);
-
-                if (!stackedData.dependencies[stacked.field]) stackedData.dependencies[stacked.field] = [];
-                if (!storeData.subscribers[field].find(s => s.field === stacked.field && s.object === stacked.object)) {
-                    storeData.subscribers[field].push(getStack[getStack.length - 1]);
-                    stackedData.dependencies[stacked.field].push({ object: this, field });
-                }
-            }
+            resolveDependencies(this, field);
 
 			if (storeData.cache[field]) {
 				return storeData.cache[field];
@@ -365,7 +369,7 @@ function storable(object, config = {}) {
 		Object.defineProperty(object, 'configure', {
 			value: function({ reactive, methods, computed } = {}) {
 				for(let field in reactive) {
-					this.reactive(field, reactive[field] && reactive[field].default || reactive[field], reactive[field] && reactive[field].setter || null, reactive[field] && reactive[field].immediate, reactive[field] && reactive[field].isFactory);
+					this.reactive(field, reactive[field] instanceof Object && ('default' in reactive[field]) ? reactive[field].default : reactive[field], reactive[field] && reactive[field].setter || null, reactive[field] && reactive[field].immediate, reactive[field] && reactive[field].isFactory);
 				}
 				for(let field in computed) {
 					this.computed(field, computed[field] instanceof Function ? computed[field] : computed[field] && computed[field].getter || null, computed[field] && computed[field].setter || null);
@@ -443,6 +447,7 @@ function storable(object, config = {}) {
 			value(field) {
                 if (field !== undefined) {
                     clearDependencies(this, field);
+                    delete data(this).cache[field];
                 } else {
                     for(let field in dflt(object).fieldTypes) {
                         this.dissociate(field);
@@ -518,6 +523,42 @@ function initStore(object) {
 }
 
 function configure(object, config = object.storeConfig) {
+    if (object.__proto__.constructor === Object) {
+        const result = {};
+        const dissociates = [];
+        const descriptors = Object.getOwnPropertyDescriptors(object);
+
+        for(let prop in descriptors) {
+            if (value in descriptors[prop]) {
+                if (descriptors[prop].value instanceof Function) {
+                    result[prop] = descriptors[prop].value;
+                } else {
+                    const [ getValue, setValue, dissociate ] = value(descriptors[prop].value);
+
+                    Object.defineProperty(result, prop, { get: getValue, set: setValue });
+                    dissociates.push(dissociate);
+                }
+            } else if (descriptors[prop].get || descriptors[prop].set) {
+                const [ getComputed, setComputed, dissociate ] = computed(descriptors[prop].get, descriptors[prop].set);
+
+                Object.defineProperty(result, prop, { get: getComputed, set: setComputed });
+                dissociates.push(dissociate);
+            }
+        }
+
+        result.dissociate = function() {
+            dissociates.forEach(dissociate => dissociate());
+        };
+
+        return result;
+    }
+    if (object instanceof Array) {
+        const [ _, __, dissociate ] = value(object);
+
+        object.dissociate = dissociate;
+
+        return innerWathcer(hiddenStore, object, (callbackCount - 1).toString());
+    }
     if (!config) {
         if (object.__proto__.constructor.isStorable && object.__proto__.constructor[AutoConfig]) {
             config = object.__proto__.constructor[AutoConfig];
@@ -835,6 +876,10 @@ function deferred(value) {
     return { [DeferredValue]: true, [Value]: value };
 }
 
+function asDependency(object) {
+    return hiddenStore[object[HiddenStoreField]];
+}
+
 // /Value modificators
 
 // Task management
@@ -875,7 +920,9 @@ function execTask() {
 			preSetters.forEach(cb => cb());
 		}
 
-        storeData.values[field] = value;
+        if (value !== NoValue) {
+            storeData.values[field] = value;
+        }
     });
     tasks.forEach(({ object, field }) => {
         change(object, field);
@@ -953,5 +1000,6 @@ module.exports = {
     waiting,
     someIsWaiting,
     allIsWaiting,
+    asDependency,
     Waiting
 };
