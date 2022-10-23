@@ -583,7 +583,7 @@ function configure(object, config = object.storeConfig) {
             for(let computed in config.computed) {
                 const descriptor = Object.getOwnPropertyDescriptor(object.__proto__, computed);
 
-                cfg.computed[computed] = config.computed[computed] instanceof Function ? cfconfigg.computed[computed] : (
+                cfg.computed[computed] = config.computed[computed] instanceof Function ? config.computed[computed] : (
                     config.computed[computed] instanceof Object ? {
                     ...config.computed[computed],
                     getter: config.computed[computed].getter || descriptor.get,
