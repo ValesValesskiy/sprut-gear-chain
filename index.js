@@ -1,3 +1,4 @@
+SPRUT = true
 const getStack = [];
 const setTasks = [];
 const syncTasks = [];
@@ -121,7 +122,7 @@ function _reactive(cls, field, def, onSet, updateImmediately, isFactory) {
                 }
             }
 
-			if (value !== Waiting && value instanceof Object && !value.__proto__.constructor.isStorable) {
+			if (value !== Waiting && value instanceof Object && !value.isStorable) {
 				return innerWathcer(this, value, field);
 			}
 
@@ -133,7 +134,7 @@ function _reactive(cls, field, def, onSet, updateImmediately, isFactory) {
 
             initReactive(this, field)
 
-            if (v.isPut) {
+            if (v instanceof Object && v.isPut) {
                 isPut = true;
                 v = v.value;
             }
@@ -180,18 +181,16 @@ function _reactive(cls, field, def, onSet, updateImmediately, isFactory) {
 function innerWathcer(that, object, field, innerProp = field) {
 	return new Proxy(object, {
 		get(target, prop) {
-            if (!(target instanceof Object) || typeof prop === 'symbol') {
-                return target[prop];
-            }
             if (prop === HiddenStoreField) {
                 return field;
             }
 
-            resolveDependencies(that, `${innerProp}.${prop}`);
+            resolveDependencies(that, `${innerProp}.${prop.toString()}`);
+
             if (isArrayMutationMethod(prop)) {
-                return arrayMutationMethod(prop, that, object, field, `${innerProp}.${prop}`);
-            } else if (prop in target && target[prop] instanceof Object && Object.hasOwnProperty(target, prop)) {
-				return innerWathcer(that, target[prop], field), `${innerProp}.${prop}`;
+                return arrayMutationMethod(prop, that, object, field, `${innerProp}.${prop.toString()}`);
+            } else if (prop in target && target[prop] instanceof Object && target.hasOwnProperty(prop)) {
+				return innerWathcer(that, target[prop], field, `${innerProp}.${prop.toString()}`);
 			}
 
 			return target[prop];
@@ -204,10 +203,10 @@ function innerWathcer(that, object, field, innerProp = field) {
 
                 if (!isDeferred && (isImmediate || dflt(that.__proto__.constructor).updateImmediately[field])) {
 				    target[prop] = value;
-				    change(that, field);
+				    change(that, `${innerProp}.${prop.toString()}`);
                     execSyncTasks();
                 } else {
-                    setTask(that, `${innerProp}.${prop}`/*field*/, NoValue/*data(that).values[field]*/, () => target[prop] = value);
+                    setTask(that, `${innerProp}.${prop.toString()}`/*field*/, NoValue/*data(that).values[field]*/, () => target[prop] = value);
                 }
 			}
 
@@ -342,7 +341,7 @@ function _method(cls, field, methodConfig) {
 
 function storable(object, config = {}) {
 	if (!object.isStorable) {
-		object.isStorable = true;
+		object.isStorable = object.prototype.isStorable = true;
 
         init(object);
 
@@ -660,6 +659,26 @@ function configure(object, config = object.storeConfig) {
 }
 
 function clearDependencies(object, field) {
+    _clearDependencies(object, field);
+
+    if (dflt(object.__proto__.constructor).fieldTypes[field] === Fields.reactive) {
+        const storeData = data(object);
+        const reg = new RegExp(`^${field}\\.`);
+
+        for(let subField in storeData.subscribers) {
+            if (reg.test(subField)) {
+                _clearDependencies(object, subField);
+            }
+        }
+        for(let subField in storeData.dependencies) {
+            if (reg.test(subField)) {
+                _clearDependencies(object, subField);
+            }
+        }
+    }
+}
+
+function _clearDependencies(object, field) {
     if (dflt(object.__proto__.constructor).fieldTypes[field]) {
         const storeData = data(object);
 
@@ -674,7 +693,7 @@ function clearDependencies(object, field) {
                     subData.dependencies[prop].splice(index, 1);
                 }
             });
-            storeData.subscribers[field] = [];
+            delete storeData.subscribers[field];
         }
         if (storeData.dependencies[field]) {
             storeData.dependencies[field].forEach(dep => {
@@ -687,7 +706,7 @@ function clearDependencies(object, field) {
                     depData.subscribers[prop].splice(index, 1);
                 }
             });
-            storeData.dependencies[field] = [];
+            delete storeData.dependencies[field];
         }
     }
 }
