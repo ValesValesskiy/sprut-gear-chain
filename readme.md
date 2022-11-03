@@ -24,6 +24,8 @@
 
 <br>
 
+## <span id="contents">Оглавление</span>
+
 - <a href="#fast">Быстрое использование</a>
 - <a href="#funcAndWait">В функциональном стиле и пример с использованием ожидания</a>
 - <a href="#storable">Аналог configure</a>
@@ -32,11 +34,13 @@
 - <a href="#timeout">Таймаут функция</a>
 - <a href="#asyncWatcher">Использование asyncWatcher</a>
 - <a href="#hush">Модификатор поведения hush</a>
-- <a href="#spread">Модификатор поведения hush</a>
+- <a href="#spread">Инструмент извлечения чистых данных spread</a>
 
 <br>
 
 ## <div id="fast">Быстрое использование:</div>
+
+- <a href="#contents">К оглавлению</a>
 
 <br>
 
@@ -64,6 +68,8 @@ store.reactiveProp++; // В логе выведет 2
 <br>
 
 ## <div id="funcAndWait">В функциональном стиле и пример с использованием ожидания:</div>
+
+- <a href="#contents">К оглавлению</a>
 
 <br>
 
@@ -109,6 +115,8 @@ setTimeout(() => {
 
 ## <div id="storable">Аналог configure:</div>
 
+- <a href="#contents">К оглавлению</a>
+
 <br>
 
 Вместо использования конфига и метода ```configure()``` возможно использовать похожий вариант конфигурации без автоматической кофигурации.
@@ -152,6 +160,8 @@ Store.configure({
 <br>
 
 ## <div id="config">Пример использования с конфигом:</div>
+
+- <a href="#contents">К оглавлению</a>
 
 <br>
 
@@ -248,6 +258,8 @@ class Store {
 
 ## <div id="dissociate">Отсоединение хранилища от зависимостей:</div>
 
+- <a href="#contents">К оглавлению</a>
+
 <br>
 
 ```js
@@ -268,6 +280,8 @@ store.dissociate();
 
 ## <div id="timeout">Таймаут функция:</div>
 
+- <a href="#contents">К оглавлению</a>
+
 <br>
 
 Также можно задать таймаут-функцию для отложенного обновления. По умолчанию это ```setTimeout``` с нулевым интервалом. Но можно закинуть и ```requestAnimationFrame```, если вы в браузере либо в ```electron```, например:
@@ -281,6 +295,8 @@ useTimeoutFunction(requestAnimationFrame);
 <br>
 
 ## <div id="asyncWatcher">Использование asyncWatcher:</div>
+
+- <a href="#contents">К оглавлению</a>
 
 <br>
 
@@ -318,6 +334,8 @@ setValue(1);
 
 ## <div id="hush">Модификатор поведения hush:</div>
 
+- <a href="#contents">К оглавлению</a>
+
 <br>
 
 Используется, чтобы положить значение в ```reactive``` поле без вызова реакций. Следует класть любое значение, кроме модифицированных одним из модификаторов поведения.
@@ -330,7 +348,9 @@ store.reactiveProp = hush('value');
 
 <br>
 
-## <div id="spread">Инструмент spread:</div>
+## <div id="spread">Инструмент извлечения чистых данных spread:</div>
+
+- <a href="#contents">К оглавлению</a>
 
 <br>
 
