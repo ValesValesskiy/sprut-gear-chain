@@ -24,7 +24,19 @@
 
 <br>
 
-## Быстрое использование:
+- <a href="#fast">Быстрое использование</a>
+- <a href="#funcAndWait">В функциональном стиле и пример с использованием ожидания</a>
+- <a href="#storable">Аналог configure</a>
+- <a href="#config">Пример использования с конфигом</a>
+- <a href="#dissociate">Отсоединение хранилища от зависимостей</a>
+- <a href="#timeout">Таймаут функция</a>
+- <a href="#asyncWatcher">Использование asyncWatcher</a>
+- <a href="#hush">Модификатор поведения hush</a>
+- <a href="#spread">Модификатор поведения hush</a>
+
+<br>
+
+## <div id="fast">Быстрое использование:</div>
 
 <br>
 
@@ -51,7 +63,7 @@ store.reactiveProp++; // В логе выведет 2
 
 <br>
 
-## В функциональном стиле и пример с использованием ожидания:
+## <div id="funcAndWait">В функциональном стиле и пример с использованием ожидания:</div>
 
 <br>
 
@@ -95,7 +107,7 @@ setTimeout(() => {
 
 <br>
 
-## Аналог configure:
+## <div id="storable">Аналог configure:</div>
 
 <br>
 
@@ -139,7 +151,7 @@ Store.configure({
 
 <br>
 
-## Пример использования с конфигом:
+## <div id="config">Пример использования с конфигом:</div>
 
 <br>
 
@@ -187,7 +199,6 @@ store.immediateProp = 'value';
 // Лог:
 // immediateProp = value, reactiveProp = 1
 // immediateProp = value, reactiveProp = 2
-
 ```
 
 Такой лог будет выведен из-за того, что одно из свойств является ```immediate: true```.
@@ -235,7 +246,7 @@ class Store {
 
 <br>
 
-## Отсоединение хранилища от зависимостей:
+## <div id="dissociate">Отсоединение хранилища от зависимостей:</div>
 
 <br>
 
@@ -255,9 +266,10 @@ store.dissociate();
 
 <br>
 
-## Таймаут функция:
+## <div id="timeout">Таймаут функция:</div>
 
 <br>
+
 Также можно задать таймаут-функцию для отложенного обновления. По умолчанию это ```setTimeout``` с нулевым интервалом. Но можно закинуть и ```requestAnimationFrame```, если вы в браузере либо в ```electron```, например:
 
 ```js
@@ -268,7 +280,7 @@ useTimeoutFunction(requestAnimationFrame);
 
 <br>
 
-## Использование asyncWatcher:
+## <div id="asyncWatcher">Использование asyncWatcher:</div>
 
 <br>
 
@@ -304,7 +316,7 @@ setValue(1);
 
 <br>
 
-## Модификатор поведения hush:
+## <div id="hush">Модификатор поведения hush:</div>
 
 <br>
 
@@ -314,6 +326,22 @@ setValue(1);
 const { hush } = require('sprut-gear-chain');
 
 store.reactiveProp = hush('value');
+```
+
+<br>
+
+## <div id="spread">Инструмент spread:</div>
+
+<br>
+
+```spread``` используется для извлечения данных из реактивных свойств и геттеров. Возвращает чистый объект. Игнорирует методы. Обычный спред не сработает, так как значения лежат на уровне прототипа.
+
+```js
+const { spread } = require('sprut-gear-chain');
+
+console.log(spread(store));
+// Выведет:
+// { ... } - Чистый объект.
 ```
 
 <br>

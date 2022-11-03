@@ -174,7 +174,8 @@ function _reactive(cls, field, def, onSet, updateImmediately, isFactory) {
 				}
 			}
 		},
-        configurable: true
+        configurable: true,
+        enumerable: true
 	})
 }
 
@@ -242,7 +243,7 @@ function resolveDependencies(object, field, isReactive) {
 
         if (!stackedData.dependencies[stacked.field]) stackedData.dependencies[stacked.field] = [];
         if (!storeData.subscribers[field].find(s => s.field === stacked.field && s.object === stacked.object)) {
-            storeData.subscribers[field].push(getStack[getStack.length - 1]);
+            storeData.subscribers[field].push(stacked);
             stackedData.dependencies[stacked.field].push({ object, field });
         }
     }
@@ -290,7 +291,8 @@ function _computed(cls, field, getter, setter) {
                 setter.apply(this, [v]);
             } else {}
         },
-        configurable: true
+        configurable: true,
+        enumerable: true
 	});
 }
 
@@ -304,13 +306,15 @@ function _method(cls, field, methodConfig) {
 
 		Object.defineProperty(cls.prototype, field, {
 			value(...args) {
+                clearDependencies(methodConfig.context || this, field);
 				watch(this, field);
 				const res = method.apply(this, args);
 				unwatch();
 		
 				return res;
 			},
-            configurable: true
+            configurable: true,
+            enumerable: true
 		});
 		cls.onChange(field, methodConfig.callback || cls.prototype[field]);
 
@@ -324,17 +328,21 @@ function _method(cls, field, methodConfig) {
 		Object.defineProperty(cls.prototype, field, {
 			get() {
 				Object.defineProperty(this, field, {
-					value: methodConfig.method.bind(this)
+					value: methodConfig.method.bind(this),
+                    configurable: true,
+                    enumerable: true
 				});
 			
 				return this[field];
 			},
-            configurable: true
+            configurable: true,
+            enumerable: true
 		});
 	} else {
 		Object.defineProperty(cls.prototype, field, {
 			value: methodConfig.method,
-            configurable: true
+            configurable: true,
+            enumerable: true
 		});
 	}
 }
@@ -353,17 +361,20 @@ function storable(object, config = {}) {
 		Object.defineProperty(object, 'computed', {
 			value: function(field, getter, setter) {
 				_computed(this, field, getter, setter);
-			}
+			},
+            enumerable: false
 		});
 		Object.defineProperty(object, 'reactive', {
 			value: function(field, def, onSet, updateImmediately, isFactory) {
                 _reactive(this, field, def, onSet, updateImmediately, isFactory);
-			}
+			},
+            enumerable: false
 		});
         Object.defineProperty(object, 'method', {
 			value: function(field, methodConfig) {
                 _method(this, field, methodConfig);
-			}
+			},
+            enumerable: false
 		});
 		Object.defineProperty(object, 'configure', {
 			value: function({ reactive, methods, computed } = {}) {
@@ -378,7 +389,8 @@ function storable(object, config = {}) {
                         this.method(field, methods[field]);
 					}
 				}
-			}
+			},
+            enumerable: false
 		});
 		Object.defineProperty(object, 'onChange', {
 			value(name, cb) {
@@ -388,7 +400,8 @@ function storable(object, config = {}) {
 					changeCallbacks[name] = [];
 				}
 				changeCallbacks[name].push(cb);
-			}
+			},
+            enumerable: false
 		});
 		Object.defineProperty(object, 'offChange', {
 			value(name, callback) {
@@ -407,7 +420,8 @@ function storable(object, config = {}) {
 						}
 					}
 				}
-			}
+			},
+            enumerable: false
 		});
 
 		Object.defineProperty(object.prototype, 'onChange', {
@@ -418,7 +432,8 @@ function storable(object, config = {}) {
 					storeData.localChangeCallbacks[name] = [];
 				}
 				storeData.localChangeCallbacks[name].push(cb);
-			}
+			},
+            enumerable: false
 		});
 		Object.defineProperty(object.prototype, 'offChange', {
 			value(name, callback) {
@@ -439,7 +454,8 @@ function storable(object, config = {}) {
 						}
 					}
 				}
-			}
+			},
+            enumerable: false
 		});
 
         Object.defineProperty(object.prototype, 'dissociate', {
@@ -452,9 +468,23 @@ function storable(object, config = {}) {
                         this.dissociate(field);
                     }
                 }
-			}
+			},
+            enumerable: false
 		});
 	}
+}
+
+function spread(object) {
+    const data = {};
+    const classData = dflt(object.__proto__.constructor);
+
+    for(let field in classData.fieldTypes) {
+        if (classData.fieldTypes[field] !== Fields.method) {
+            data[field] = object[field];
+        }
+    }
+
+    return data;
 }
 
 function change(object, field) {
@@ -467,10 +497,10 @@ function change(object, field) {
 
         if (storeData.subscribers[field]) {
             subs = storeData.subscribers[field];
-            storeData.subscribers[field] = [];
+            clearDependencies(object, field);
         }
 
-        if (storeData.cache[field]) {
+        if (field in storeData.cache) {
             delete storeData.cache[field];
         }
 
@@ -777,7 +807,8 @@ function callback(callback, dependencies, proxyCallback, config = {}) {
 				method: callback,
                 callback: proxyCallback,
 				autoExec: true,
-                dependencies
+                dependencies,
+                context: hiddenStore
 			}
 		}
 	});
@@ -796,6 +827,7 @@ function callback(callback, dependencies, proxyCallback, config = {}) {
         },
         () => {
             HiddenStore.offChange(field, hiddenStore[field]);
+            HiddenStore.offChange(field, proxyCallback);
             clearDependencies(hiddenStore, field);
         }
     ];
@@ -1020,5 +1052,6 @@ module.exports = {
     someIsWaiting,
     allIsWaiting,
     asDependency,
+    spread,
     Waiting
 };
