@@ -26,21 +26,21 @@
 
 ## <span id="contents">Оглавление</span>
 
-- <a href="#fast">Быстрое использование</a>
-- <a href="#funcAndWait">В функциональном стиле и пример с использованием ожидания</a>
-- <a href="#storable">Аналог configure</a>
-- <a href="#config">Пример использования с конфигом</a>
-- <a href="#dissociate">Отсоединение хранилища от зависимостей</a>
-- <a href="#timeout">Таймаут функция</a>
-- <a href="#asyncWatcher">Использование asyncWatcher</a>
-- <a href="#hush">Модификатор поведения hush</a>
-- <a href="#spread">Инструмент извлечения чистых данных spread</a>
+- [Быстрое использование](#fast)
+- [В функциональном стиле и пример с использованием ожидания](#funcAndWait)
+- [Аналог configure](#storable)
+- [Пример использования с конфигом](#config)
+- [Отсоединение хранилища от зависимостей](#dissociate)
+- [Таймаут функция](#timeout)
+- [Использование asyncWatcher](#asyncWatcher)
+- [Модификатор поведения hush](#hush)
+- [Инструмент извлечения чистых данных spread](#spread)
 
 <br>
 
-## <div id="fast">Быстрое использование:</div>
+## <span id="fast">Быстрое использование:</span>
 
-- <a href="#contents">К оглавлению</a>
+- [К оглавлению](#contents)
 
 <br>
 
@@ -67,9 +67,9 @@ store.reactiveProp++; // В логе выведет 2
 
 <br>
 
-## <div id="funcAndWait">В функциональном стиле и пример с использованием ожидания:</div>
+## <span id="funcAndWait">В функциональном стиле и пример с использованием ожидания:</span>
 
-- <a href="#contents">К оглавлению</a>
+- [К оглавлению](#contents)
 
 <br>
 
@@ -113,9 +113,9 @@ setTimeout(() => {
 
 <br>
 
-## <div id="storable">Аналог configure:</div>
+## <span id="storable">Аналог configure:</span>
 
-- <a href="#contents">К оглавлению</a>
+- [К оглавлению](#contents)
 
 <br>
 
@@ -159,9 +159,9 @@ Store.configure({
 
 <br>
 
-## <div id="config">Пример использования с конфигом:</div>
+## <span id="config">Пример использования с конфигом:</span>
 
-- <a href="#contents">К оглавлению</a>
+- [К оглавлению](#contents)
 
 <br>
 
@@ -256,9 +256,9 @@ class Store {
 
 <br>
 
-## <div id="dissociate">Отсоединение хранилища от зависимостей:</div>
+## <span id="dissociate">Отсоединение хранилища от зависимостей:</span>
 
-- <a href="#contents">К оглавлению</a>
+- [К оглавлению](#contents)
 
 <br>
 
@@ -278,9 +278,9 @@ store.dissociate();
 
 <br>
 
-## <div id="timeout">Таймаут функция:</div>
+## <span id="timeout">Таймаут функция:</span>
 
-- <a href="#contents">К оглавлению</a>
+- [К оглавлению](#contents)
 
 <br>
 
@@ -294,9 +294,9 @@ useTimeoutFunction(requestAnimationFrame);
 
 <br>
 
-## <div id="asyncWatcher">Использование asyncWatcher:</div>
+## <span id="asyncWatcher">Использование asyncWatcher:</span>
 
-- <a href="#contents">К оглавлению</a>
+- [К оглавлению](#contents)
 
 <br>
 
@@ -332,9 +332,9 @@ setValue(1);
 
 <br>
 
-## <div id="hush">Модификатор поведения hush:</div>
+## <span id="hush">Модификатор поведения hush:</span>
 
-- <a href="#contents">К оглавлению</a>
+- [К оглавлению](#contents)
 
 <br>
 
@@ -348,9 +348,9 @@ store.reactiveProp = hush('value');
 
 <br>
 
-## <div id="spread">Инструмент извлечения чистых данных spread:</div>
+## <span id="spread">Инструмент извлечения чистых данных spread:</span>
 
-- <a href="#contents">К оглавлению</a>
+- [К оглавлению](#contents)
 
 <br>
 
